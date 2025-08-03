@@ -1,4 +1,5 @@
 using UnityEngine;
+using System;
 
 public class CubeController : MonoBehaviour
 {
@@ -11,9 +12,13 @@ public class CubeController : MonoBehaviour
     private float lastSendTime = 0f;
     
     private Rigidbody rb;
- 
     private Vector3 lastPosition;
-     private bool isLocalPlayer = false; // Có phải người chơi local không
+    
+    [Header("Multiplayer Settings")]
+    public bool isLocalPlayer = false; // Có phải người chơi local không
+    
+    // Event để thông báo khi vị trí thay đổi
+    public event Action<Vector3> OnPositionChanged;
     
     void Start()
     {
@@ -27,16 +32,20 @@ public class CubeController : MonoBehaviour
         // Cài đặt Rigidbody để di chuyển mượt mà hơn
         rb.freezeRotation = true; // Không cho cube xoay khi va chạm
         
-     
+        lastPosition = transform.position;
     }
     
     void Update()
     {
-         HandleKeyboardInput();
+        // Chỉ xử lý input nếu là người chơi local
+        if (isLocalPlayer)
+        {
+            HandleKeyboardInput();
+        }
+        
+        // Kiểm tra và gửi vị trí nếu có thay đổi
+        CheckAndSendPosition();
     }
-    
-    // Kiểm tra xem có phải người chơi local không
- 
     
     // Xử lý input từ bàn phím
     private void HandleKeyboardInput()
@@ -51,7 +60,20 @@ public class CubeController : MonoBehaviour
             MoveRight();
     }
     
- 
+    // Kiểm tra và gửi vị trí nếu có thay đổi
+    private void CheckAndSendPosition()
+    {
+        if (isLocalPlayer && Time.time - lastSendTime >= sendPositionInterval)
+        {
+            Vector3 currentPosition = transform.position;
+            if (Vector3.Distance(currentPosition, lastPosition) > 0.01f) // Chỉ gửi nếu di chuyển đủ xa
+            {
+                OnPositionChanged?.Invoke(currentPosition);
+                lastPosition = currentPosition;
+                lastSendTime = Time.time;
+            }
+        }
+    }
     
     // Di chuyển về phía trước (tiến)
     public void MoveForward()
@@ -105,6 +127,12 @@ public class CubeController : MonoBehaviour
     public Vector3 GetCurrentPosition()
     {
         return transform.position;
+    }
+    
+    // Phương thức để set vị trí từ server (cho người chơi khác)
+    public void SetPosition(Vector3 newPosition)
+    {
+        transform.position = newPosition;
     }
 }
     

@@ -12,6 +12,7 @@ public class ClientController : MonoBehaviour
     public List<Material> lsMaterials;
     public List<Transform> lsTransforms;
     public Button readyButton;
+    public GameObject cubePrefab; // Prefab cube để spawn
 
     TcpClient client;
     NetworkStream stream;
@@ -19,6 +20,13 @@ public class ClientController : MonoBehaviour
     StreamReader reader;
     Thread listenThread;
     List<int> currentList = new List<int>();
+    
+    // Quản lý cube của các player
+    Dictionary<int, GameObject> playerCubes = new Dictionary<int, GameObject>();
+    int myPlayerIndex = -1;
+    bool gameStarted = false;
+
+    public CubeController cubeController;
 
     void Start()
     {
@@ -71,31 +79,147 @@ public class ClientController : MonoBehaviour
                 {
                     Debug.Log("🔔 Server push: " + line);
 
-                    try
+                    if (line == "START_GAME")
                     {
-                        byte[] data = Convert.FromBase64String(line);
-                        List<int> list = ConvertBytesToList(data);
-                        currentList = list;
-                        foreach(var item in list)
-                        {
-                            Debug.Log(item);
-                        }
                         UnityMainThreadDispatcher.Instance().Enqueue(() =>
                         {
-                            UpdateUI(list);
+                            StartGame();
                         });
                     }
-                catch (Exception ex)
-                   {
-                     Debug.LogWarning($"⚠️ Không thể parse base64 list: {line}");
-                      Debug.LogError($"📛 Exception: {ex.Message}");
-                   }
+                    else if (line.StartsWith("UPDATE_POSITION:"))
+                    {
+                        // Format: UPDATE_POSITION:playerIndex:x,y,z
+                        string[] parts = line.Split(':');
+                        if (parts.Length == 3)
+                        {
+                            if (int.TryParse(parts[1], out int playerIndex))
+                            {
+                                string[] coords = parts[2].Split(',');
+                                if (coords.Length == 3 && float.TryParse(coords[0], out float x) && 
+                                    float.TryParse(coords[1], out float y) && float.TryParse(coords[2], out float z))
+                                {
+                                    UnityMainThreadDispatcher.Instance().Enqueue(() =>
+                                    {
+                                        UpdatePlayerPosition(playerIndex, new Vector3(x, y, z));
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        try
+                        {
+                            byte[] data = Convert.FromBase64String(line);
+                            List<int> list = ConvertBytesToList(data);
+                            currentList = list;
+                            foreach(var item in list)
+                            {
+                                Debug.Log(item);
+                            }
+                            UnityMainThreadDispatcher.Instance().Enqueue(() =>
+                            {
+                                UpdateUI(list);
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"⚠️ Không thể parse base64 list: {line}");
+                            Debug.LogError($"📛 Exception: {ex.Message}");
+                        }
+                    }
                 }
             }
         }
         catch (IOException)
         {
             Debug.Log("🔌 Kết nối bị đóng.");
+        }
+    }
+
+    void StartGame()
+    {
+        if (gameStarted) return;
+        
+        gameStarted = true;
+        Debug.Log("🎮 Bắt đầu game!");
+        
+        // Tìm index của mình trong danh sách
+        for (int i = 0; i < currentList.Count; i++)
+        {
+            if (currentList[i] == 2) // Đã sẵn sàng
+            {
+                myPlayerIndex = i;
+                break;
+            }
+        }
+        
+        // Tạo cube cho tất cả người chơi đã sẵn sàng
+        for (int i = 0; i < currentList.Count; i++)
+        {
+            if (currentList[i] == 2 && i < lsTransforms.Count)
+            {
+                CreatePlayerCube(i);
+            }
+        }
+        
+        // Ẩn UI ready
+        readyButton.gameObject.SetActive(false);
+    }
+
+    void CreatePlayerCube(int playerIndex)
+    {
+        if (playerIndex >= lsTransforms.Count || playerIndex >= lsMaterials.Count) return;
+        
+        // Tạo cube tại vị trí tương ứng
+        Vector3 spawnPosition = lsTransforms[playerIndex].position;
+        GameObject cube = Instantiate(cubePrefab, spawnPosition, Quaternion.identity);
+        
+        // Gán material tương ứng
+        Renderer renderer = cube.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            renderer.material = lsMaterials[playerIndex];
+        }
+        
+        // Nếu là cube của mình, cho phép điều khiển
+        if (playerIndex == myPlayerIndex)
+        {
+            CubeController controller = cube.GetComponent<CubeController>();
+            if (controller != null)
+            {
+                controller.isLocalPlayer = true;
+                controller.OnPositionChanged += SendPositionToServer;
+            }
+        }
+        else
+        {
+            // Nếu là cube của người khác, vô hiệu hóa input
+            CubeController controller = cube.GetComponent<CubeController>();
+            if (controller != null)
+            {
+                controller.isLocalPlayer = false;
+            }
+        }
+        
+        playerCubes[playerIndex] = cube;
+        Debug.Log($"🎲 Tạo cube cho player {playerIndex} tại vị trí {spawnPosition}");
+    }
+
+    void UpdatePlayerPosition(int playerIndex, Vector3 newPosition)
+    {
+        if (playerCubes.ContainsKey(playerIndex) && playerIndex != myPlayerIndex)
+        {
+            playerCubes[playerIndex].transform.position = newPosition;
+        }
+    }
+
+    void SendPositionToServer(Vector3 position)
+    {
+        if (writer != null && gameStarted)
+        {
+            string positionCommand = $"POSITION:{position.x},{position.y},{position.z}";
+            writer.WriteLine(positionCommand);
         }
     }
 
