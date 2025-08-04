@@ -1,0 +1,8 @@
+D:\UnityProject\Multiplayer\Temp\bin\Debug\Assembly-CSharp.dll
+D:\UnityProject\Multiplayer\Temp\bin\Debug\Assembly-CSharp.pdb
+D:\UnityProject\Multiplayer\Temp\bin\Debug\ParrelSync.pdb
+D:\UnityProject\Multiplayer\obj\Debug\Assembly-CSharp.csproj.AssemblyReference.cache
+D:\UnityProject\Multiplayer\obj\Debug\Assembly-CSharp.csproj.CoreCompileInputs.cache
+D:\UnityProject\Multiplayer\obj\Debug\Assembly.44154EF1.Up2Date
+D:\UnityProject\Multiplayer\obj\Debug\Assembly-CSharp.dll
+D:\UnityProject\Multiplayer\obj\Debug\Assembly-CSharp.pdb

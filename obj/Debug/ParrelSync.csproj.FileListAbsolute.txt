@@ -1,0 +1,6 @@
+D:\UnityProject\Multiplayer\Temp\bin\Debug\ParrelSync.dll
+D:\UnityProject\Multiplayer\Temp\bin\Debug\ParrelSync.pdb
+D:\UnityProject\Multiplayer\obj\Debug\ParrelSync.csproj.AssemblyReference.cache
+D:\UnityProject\Multiplayer\obj\Debug\ParrelSync.csproj.CoreCompileInputs.cache
+D:\UnityProject\Multiplayer\obj\Debug\ParrelSync.dll
+D:\UnityProject\Multiplayer\obj\Debug\ParrelSync.pdb

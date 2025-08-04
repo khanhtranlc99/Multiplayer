@@ -107,8 +107,8 @@ class Program
                                 gameStarted = true;
                                 Console.WriteLine("🎮 Bắt đầu game với " + readyCount + " người chơi!");
                                 
-                                // Gửi lệnh START_GAME cho tất cả client đã sẵn sàng
-                                BroadcastToReadyPlayers("START_GAME");
+                                // Gửi lệnh START_GAME kèm player index cho từng client
+                                BroadcastStartGameWithPlayerIndex();
                             }
                         }
                     }
@@ -121,26 +121,78 @@ class Program
                 else if (command.StartsWith("POSITION:"))
                 {
                     // Format: POSITION:x,y,z
+                    Console.WriteLine($"🔍 Xử lý POSITION command: {command}");
                     string[] parts = command.Split(':');
+                    Console.WriteLine($"🔍 Parts length: {parts.Length}");
+                    
                     if (parts.Length == 2)
                     {
                         string[] coords = parts[1].Split(',');
-                        if (coords.Length == 3 && float.TryParse(coords[0], out float x) && 
-                            float.TryParse(coords[1], out float y) && float.TryParse(coords[2], out float z))
+                        Console.WriteLine($"🔍 Coords: {string.Join(",", coords)}, Length: {coords.Length}");
+                        
+                        if (coords.Length >= 3)
                         {
+                            // Xử lý format số với dấu phẩy thập phân
+                            string xStr = coords[0];
+                            string yStr = coords[1];
+                            string zStr = coords[2];
+                            
+                            // Nếu có dấu phẩy thập phân, gộp lại
+                            if (coords.Length > 3)
+                            {
+                                // Trường hợp: -2,32,0,25,-0,3750231
+                                // Gộp: -2,32 -> -2.32, 0,25 -> 0.25, -0,3750231 -> -0.3750231
+                                if (coords.Length >= 4)
+                                {
+                                    xStr = coords[0] + "." + coords[1];
+                                    yStr = coords[2] + "." + coords[3];
+                                    if (coords.Length >= 5)
+                                        zStr = coords[4] + "." + coords[5];
+                                }
+                            }
+                            
+                            Console.WriteLine($"🔍 Parse coordinates: xStr={xStr}, yStr={yStr}, zStr={zStr}");
+                            
+                            if (float.TryParse(xStr, out float x) && 
+                                float.TryParse(yStr, out float y) && 
+                                float.TryParse(zStr, out float z))
+                            {
+                                Console.WriteLine($"🔍 Parse thành công: x={x}, y={y}, z={z}");
+                            
                             lock (locker)
                             {
+                                Console.WriteLine($"🔍 clientIndexMap.ContainsKey(client): {clientIndexMap.ContainsKey(client)}");
                                 if (clientIndexMap.ContainsKey(client))
                                 {
                                     int playerIndex = clientIndexMap[client];
+                                    Console.WriteLine($"🔍 Player index: {playerIndex}");
                                     playerPositions[playerIndex] = new Vector3Data(x, y, z);
                                     
-                                    // Gửi vị trí mới cho tất cả client khác
-                                    string positionUpdate = $"UPDATE_POSITION:{playerIndex}:{x},{y},{z}";
-                                    BroadcastAllExcept(client, positionUpdate);
+                                    // Làm tròn số để tránh vấn đề format và làm mượt đồng bộ
+                                    float roundedX = (float)Math.Round(x, 2);
+                                    float roundedY = (float)Math.Round(y, 2);
+                                    float roundedZ = (float)Math.Round(z, 2);
+                                    
+                                    // Gửi vị trí mới cho tất cả client (kể cả chính client đó)
+                                    string positionUpdate = $"UPDATE_POSITION:{playerIndex}:{roundedX},{roundedY},{roundedZ}";
+                                    Console.WriteLine($"📤 Gửi vị trí player {playerIndex}: {roundedX},{roundedY},{roundedZ} cho tất cả client");
+                                    BroadcastAll(positionUpdate);
+                                }
+                                else
+                                {
+                                    Console.WriteLine("❌ Client không có trong clientIndexMap!");
                                 }
                             }
                         }
+                        else
+                        {
+                            Console.WriteLine($"❌ Không thể parse coordinates: {parts[1]}");
+                        }
+                    }
+                    }
+                    else
+                    {
+                        Console.WriteLine($"❌ Format POSITION không đúng: {command}");
                     }
                 }
                 else
@@ -240,6 +292,33 @@ class Program
                         NetworkStream stream = cli.GetStream();
                         StreamWriter writer = new StreamWriter(stream) { AutoFlush = true };
                         writer.WriteLine(message);
+                    }
+                    catch
+                    {
+                        // Bỏ qua nếu bị lỗi
+                    }
+                }
+            }
+        }
+    }
+
+    static void BroadcastStartGameWithPlayerIndex()
+    {
+        lock (locker)
+        {
+            foreach (var kvp in clientIndexMap)
+            {
+                TcpClient cli = kvp.Key;
+                int playerIndex = kvp.Value;
+                
+                if (playerIndex < numberList.Count && numberList[playerIndex] == 2) // Chỉ gửi cho người đã sẵn sàng
+                {
+                    try
+                    {
+                        NetworkStream stream = cli.GetStream();
+                        StreamWriter writer = new StreamWriter(stream) { AutoFlush = true };
+                        // Gửi START_GAME kèm player index của client này
+                        writer.WriteLine($"START_GAME:{playerIndex}");
                     }
                     catch
                     {

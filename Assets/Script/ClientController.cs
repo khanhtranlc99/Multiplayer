@@ -28,6 +28,12 @@ public class ClientController : MonoBehaviour
 
     public CubeController cubeController;
 
+    public Button leftBtn;
+    public Button rightBtn;
+    public Button upBtn;
+    public Button downBtn;
+ 
+
     void Start()
     {
         // Gắn sự kiện nút Sẵn sàng
@@ -43,7 +49,7 @@ public class ClientController : MonoBehaviour
     {
         try
         {
-            client = new TcpClient("172.31.98.39", 8888); // ⚠️ sửa IP nếu cần
+            client = new TcpClient("192.168.1.9", 8888); // ⚠️ sửa IP nếu cần
             stream = client.GetStream();
             writer = new StreamWriter(stream) { AutoFlush = true };
             reader = new StreamReader(stream);
@@ -79,16 +85,22 @@ public class ClientController : MonoBehaviour
                 {
                     Debug.Log("🔔 Server push: " + line);
 
-                    if (line == "START_GAME")
+                    if (line.StartsWith("START_GAME:"))
                     {
-                        UnityMainThreadDispatcher.Instance().Enqueue(() =>
+                        // Format: START_GAME:playerIndex
+                        string[] parts = line.Split(':');
+                        if (parts.Length == 2 && int.TryParse(parts[1], out int playerIndex))
                         {
-                            StartGame();
-                        });
+                            UnityMainThreadDispatcher.Instance().Enqueue(() =>
+                            {
+                                StartGame(playerIndex);
+                            });
+                        }
                     }
                     else if (line.StartsWith("UPDATE_POSITION:"))
                     {
                         // Format: UPDATE_POSITION:playerIndex:x,y,z
+                        Debug.Log($"📥 Nhận UPDATE_POSITION: {line}");
                         string[] parts = line.Split(':');
                         if (parts.Length == 3)
                         {
@@ -98,12 +110,25 @@ public class ClientController : MonoBehaviour
                                 if (coords.Length == 3 && float.TryParse(coords[0], out float x) && 
                                     float.TryParse(coords[1], out float y) && float.TryParse(coords[2], out float z))
                                 {
+                                    Debug.Log($"📍 Parse thành công: Player {playerIndex} -> ({x},{y},{z})");
                                     UnityMainThreadDispatcher.Instance().Enqueue(() =>
                                     {
                                         UpdatePlayerPosition(playerIndex, new Vector3(x, y, z));
                                     });
                                 }
+                                else
+                                {
+                                    Debug.LogError($"❌ Không thể parse coordinates: {parts[2]}");
+                                }
                             }
+                            else
+                            {
+                                Debug.LogError($"❌ Không thể parse player index: {parts[1]}");
+                            }
+                        }
+                        else
+                        {
+                            Debug.LogError($"❌ Format UPDATE_POSITION không đúng: {line}");
                         }
                     }
                     else
@@ -137,31 +162,32 @@ public class ClientController : MonoBehaviour
         }
     }
 
-    void StartGame()
+    void StartGame(int playerIndex)
     {
         if (gameStarted) return;
         
         gameStarted = true;
-        Debug.Log("🎮 Bắt đầu game!");
-        
-        // Tìm index của mình trong danh sách
-        for (int i = 0; i < currentList.Count; i++)
-        {
-            if (currentList[i] == 2) // Đã sẵn sàng
-            {
-                myPlayerIndex = i;
-                break;
-            }
-        }
+        myPlayerIndex = playerIndex;
+        Debug.Log($"🎮 Bắt đầu game! Player index của tôi: {myPlayerIndex}");
+        Debug.Log($"📊 Danh sách player: {string.Join(",", currentList)}");
         
         // Tạo cube cho tất cả người chơi đã sẵn sàng
+        int cubeCount = 0;
         for (int i = 0; i < currentList.Count; i++)
         {
             if (currentList[i] == 2 && i < lsTransforms.Count)
             {
+                Debug.Log($"🎲 Tạo cube cho player {i} (trạng thái: {currentList[i]})");
                 CreatePlayerCube(i);
+                cubeCount++;
+            }
+            else
+            {
+                Debug.Log($"⏭️ Bỏ qua player {i} (trạng thái: {currentList[i]}, có transform: {i < lsTransforms.Count})");
             }
         }
+        
+        Debug.Log($"✅ Đã tạo {cubeCount} cube cho {currentList.Count} player");
         
         // Ẩn UI ready
         readyButton.gameObject.SetActive(false);
@@ -169,17 +195,35 @@ public class ClientController : MonoBehaviour
 
     void CreatePlayerCube(int playerIndex)
     {
-        if (playerIndex >= lsTransforms.Count || playerIndex >= lsMaterials.Count) return;
+        Debug.Log($"🔨 Bắt đầu tạo cube cho player {playerIndex}");
+        Debug.Log($"🔨 lsTransforms.Count: {lsTransforms.Count}, lsMaterials.Count: {lsMaterials.Count}");
+        
+        if (playerIndex >= lsTransforms.Count || playerIndex >= lsMaterials.Count) 
+        {
+            Debug.LogError($"❌ Không thể tạo cube cho player {playerIndex}: Index vượt quá giới hạn!");
+            return;
+        }
         
         // Tạo cube tại vị trí tương ứng
         Vector3 spawnPosition = lsTransforms[playerIndex].position;
         GameObject cube = Instantiate(cubePrefab, spawnPosition, Quaternion.identity);
+        
+        if (cube == null)
+        {
+            Debug.LogError($"❌ Không thể instantiate cube prefab!");
+            return;
+        }
         
         // Gán material tương ứng
         Renderer renderer = cube.GetComponent<Renderer>();
         if (renderer != null)
         {
             renderer.material = lsMaterials[playerIndex];
+            Debug.Log($"🎨 Gán material {playerIndex} cho cube");
+        }
+        else
+        {
+            Debug.LogWarning($"⚠️ Cube không có Renderer component!");
         }
         
         // Nếu là cube của mình, cho phép điều khiển
@@ -190,6 +234,7 @@ public class ClientController : MonoBehaviour
             {
                 controller.isLocalPlayer = true;
                 controller.OnPositionChanged += SendPositionToServer;
+                Debug.Log($"🎮 Cube {playerIndex} là của tôi - cho phép điều khiển");
             }
         }
         else
@@ -199,18 +244,34 @@ public class ClientController : MonoBehaviour
             if (controller != null)
             {
                 controller.isLocalPlayer = false;
+                Debug.Log($"👤 Cube {playerIndex} là của người khác - vô hiệu hóa input");
             }
         }
         
         playerCubes[playerIndex] = cube;
-        Debug.Log($"🎲 Tạo cube cho player {playerIndex} tại vị trí {spawnPosition}");
+        Debug.Log($"✅ Tạo thành công cube cho player {playerIndex} tại vị trí {spawnPosition}");
     }
 
     void UpdatePlayerPosition(int playerIndex, Vector3 newPosition)
     {
+        Debug.Log($"🎯 UpdatePlayerPosition được gọi: Player {playerIndex}, Vị trí {newPosition}, myPlayerIndex: {myPlayerIndex}");
+        Debug.Log($"🎯 playerCubes.ContainsKey({playerIndex}): {playerCubes.ContainsKey(playerIndex)}");
+        
         if (playerCubes.ContainsKey(playerIndex) && playerIndex != myPlayerIndex)
         {
             playerCubes[playerIndex].transform.position = newPosition;
+            Debug.Log($"📍 Cập nhật vị trí player {playerIndex}: {newPosition}");
+        }
+        else
+        {
+            if (!playerCubes.ContainsKey(playerIndex))
+            {
+                Debug.LogWarning($"⚠️ Không tìm thấy cube cho player {playerIndex}");
+            }
+            if (playerIndex == myPlayerIndex)
+            {
+                Debug.Log($"ℹ️ Bỏ qua cập nhật vị trí của chính mình (player {playerIndex})");
+            }
         }
     }
 
@@ -220,6 +281,14 @@ public class ClientController : MonoBehaviour
         {
             string positionCommand = $"POSITION:{position.x},{position.y},{position.z}";
             writer.WriteLine(positionCommand);
+            Debug.Log($"📤 Gửi vị trí lên server: {positionCommand}");
+        }
+        else
+        {
+            if (writer == null)
+                Debug.LogWarning("⚠️ Writer null, không thể gửi vị trí");
+            if (!gameStarted)
+                Debug.LogWarning("⚠️ Game chưa bắt đầu, không thể gửi vị trí");
         }
     }
 
@@ -267,7 +336,7 @@ public class ClientController : MonoBehaviour
         }
         return list;
     }
-
+    
     void OnApplicationQuit()
     {
         try

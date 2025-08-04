@@ -19,6 +19,7 @@ public class CubeController : MonoBehaviour
     
     // Event để thông báo khi vị trí thay đổi
     public event Action<Vector3> OnPositionChanged;
+  
     
     void Start()
     {
